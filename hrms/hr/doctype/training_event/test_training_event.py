@@ -1,15 +1,14 @@
 # Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
-import unittest
-
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
 from hrms.payroll.doctype.salary_structure.test_salary_structure import make_employee
 
 
-class TestTrainingEvent(unittest.TestCase):
+class TestTrainingEvent(IntegrationTestCase):
 	def setUp(self):
 		create_training_program("Basic Training")
 		employee = make_employee("robert_loan@trainig.com")

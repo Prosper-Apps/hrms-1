@@ -17,19 +17,51 @@ def make_company_fixtures(doc, method=None):
 	make_salary_components(doc.country)
 
 
+def delete_company_fixtures():
+	countries = frappe.get_all(
+		"Company",
+		distinct="True",
+		pluck="country",
+	)
+
+	for country in countries:
+		try:
+			module_name = f"hrms.regional.{frappe.scrub(country)}.setup.uninstall"
+			frappe.get_attr(module_name)()
+		except (ImportError, AttributeError):
+			# regional file or method does not exist
+			pass
+		except Exception as e:
+			frappe.log_error("Unable to delete country fixtures for Frappe HR")
+			msg = _("Failed to delete defaults for country {0}.").format(frappe.bold(country))
+			msg += "<br><br>" + _("{0}: {1}").format(frappe.bold(_("Error")), get_error_message(e))
+			frappe.throw(msg, title=_("Country Fixture Deletion Failed"))
+
+
 def run_regional_setup(country):
 	try:
 		module_name = f"hrms.regional.{frappe.scrub(country)}.setup.setup"
 		frappe.get_attr(module_name)()
 	except ImportError:
 		pass
+	except Exception as e:
+		frappe.log_error("Unable to setup country fixtures for Frappe HR")
+		msg = _("Failed to setup defaults for country {0}.").format(frappe.bold(country))
+		msg += "<br><br>" + _("{0}: {1}").format(frappe.bold(_("Error")), get_error_message(e))
+		frappe.throw(msg, title=_("Country Setup failed"))
+
+
+def get_error_message(error) -> str:
+	try:
+		message_log = frappe.message_log.pop() if frappe.message_log else str(error)
+		if isinstance(message_log, str):
+			error_message = json.loads(message_log).get("message")
+		else:
+			error_message = message_log.get("message")
 	except Exception:
-		frappe.log_error("Unable to setup country fixtures for HRMS")
-		frappe.throw(
-			_("Failed to setup defaults for country {0}. Please contact support.").format(
-				frappe.bold(country)
-			)
-		)
+		error_message = message_log
+
+	return error_message
 
 
 def make_salary_components(country):
@@ -49,6 +81,7 @@ def make_salary_components(country):
 		try:
 			doc = frappe.get_doc(d)
 			doc.flags.ignore_permissions = True
+			doc.flags.ignore_mandatory = True
 			doc.insert(ignore_if_duplicate=True)
 		except frappe.NameError:
 			frappe.clear_messages()
@@ -58,9 +91,9 @@ def make_salary_components(country):
 
 def read_data_file(file_path):
 	try:
-		with open(file_path, "r") as f:
+		with open(file_path) as f:
 			return f.read()
-	except IOError:
+	except OSError:
 		return "{}"
 
 
@@ -96,6 +129,6 @@ def validate_default_accounts(doc, method=None):
 		if get_account_currency(doc.default_payroll_payable_account) != doc.default_currency:
 			frappe.throw(
 				_(
-					"{0} currency must be same as company's default currency. Please select another account."
-				).format(frappe.bold("Default Payroll Payable Account"))
+					"The currency of {0} should be same as the company's default currency. Please select another account."
+				).format(frappe.bold(_("Default Payroll Payable Account")))
 			)

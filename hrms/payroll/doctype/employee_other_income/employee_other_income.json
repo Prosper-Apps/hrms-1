@@ -6,14 +6,17 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "employee_section",
   "employee",
   "employee_name",
-  "payroll_period",
+  "amended_from",
   "column_break_3",
   "company",
+  "payroll_period",
+  "income_source_details_section",
   "source",
-  "amount",
-  "amended_from"
+  "column_break_10",
+  "amount"
  ],
  "fields": [
   {
@@ -22,7 +25,8 @@
    "in_list_view": 1,
    "label": "Employee",
    "options": "Employee",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "payroll_period",
@@ -30,7 +34,8 @@
    "in_list_view": 1,
    "label": "Payroll Period",
    "options": "Payroll Period",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "column_break_3",
@@ -42,7 +47,8 @@
    "in_list_view": 1,
    "label": "Company",
    "options": "Company",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "source",
@@ -72,11 +78,25 @@
    "options": "Employee Other Income",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "employee_section",
+   "fieldtype": "Section Break",
+   "label": "Employee Details"
+  },
+  {
+   "fieldname": "income_source_details_section",
+   "fieldtype": "Section Break",
+   "label": "Income Source"
+  },
+  {
+   "fieldname": "column_break_10",
+   "fieldtype": "Column Break"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2022-01-19 12:58:43.255900",
+ "modified": "2024-03-27 13:09:40.255656",
  "modified_by": "Administrator",
  "module": "Payroll",
  "name": "Employee Other Income",
@@ -131,7 +151,7 @@
  ],
  "quick_entry": 1,
  "search_fields": "employee_name",
- "sort_field": "modified",
+ "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
  "title_field": "employee_name",

@@ -41,6 +41,14 @@ class JobApplicant(Document):
 			guess = self.email_id.split("@")[0]
 			self.applicant_name = " ".join([p.capitalize() for p in guess.split(".")])
 
+	def before_insert(self):
+		if self.job_title:
+			job_opening_status = frappe.db.get_value("Job Opening", self.job_title, "status")
+			if job_opening_status == "Closed":
+				frappe.throw(
+					_("Cannot create a Job Applicant against a closed Job Opening"), title=_("Not Allowed")
+				)
+
 	def set_status_for_employee_referral(self):
 		emp_ref = frappe.get_doc("Employee Referral", self.employee_referral)
 		if self.status in ["Open", "Replied", "Hold"]:
@@ -72,10 +80,11 @@ def create_interview(doc, interview_round):
 	interview.designation = doc.designation
 	interview.resume_link = doc.resume_link
 	interview.job_opening = doc.job_title
-	interviewer_detail = get_interviewers(interview_round)
 
-	for d in interviewer_detail:
+	interviewers = get_interviewers(interview_round)
+	for d in interviewers:
 		interview.append("interview_details", {"interviewer": d.interviewer})
+
 	return interview
 
 

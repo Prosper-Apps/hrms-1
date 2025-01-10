@@ -1,15 +1,14 @@
 # Copyright (c) 2021, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
-import unittest
-
 import frappe
+from frappe.tests import IntegrationTestCase
 from frappe.utils import today
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
 
 
-class TestEmployeeGrievance(unittest.TestCase):
+class TestEmployeeGrievance(IntegrationTestCase):
 	def test_create_employee_grievance(self):
 		create_employee_grievance()
 
