@@ -5,27 +5,31 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.query_builder import Criterion
-from frappe.utils import get_link_to_form, getdate
+from frappe.utils import get_link_to_form
 
 from hrms.hr.doctype.shift_assignment.shift_assignment import has_overlapping_timings
 from hrms.hr.utils import share_doc_with_approver, validate_active_employee
+from hrms.mixins.pwa_notifications import PWANotificationsMixin
 
 
 class OverlappingShiftRequestError(frappe.ValidationError):
 	pass
 
 
-class ShiftRequest(Document):
+class ShiftRequest(Document, PWANotificationsMixin):
 	def validate(self):
 		validate_active_employee(self.employee)
-		self.validate_dates()
+		self.validate_from_to_dates("from_date", "to_date")
 		self.validate_overlapping_shift_requests()
 		self.validate_approver()
 		self.validate_default_shift()
 
 	def on_update(self):
 		share_doc_with_approver(self, self.approver)
+		self.notify_approval_status()
+
+	def after_insert(self):
+		self.notify_approver()
 
 	def on_submit(self):
 		if self.status not in ["Approved", "Rejected"]:
@@ -50,8 +54,8 @@ class ShiftRequest(Document):
 			)
 
 	def on_cancel(self):
-		shift_assignment_list = frappe.get_list(
-			"Shift Assignment", {"employee": self.employee, "shift_request": self.name}
+		shift_assignment_list = frappe.db.get_all(
+			"Shift Assignment", {"employee": self.employee, "shift_request": self.name, "docstatus": 1}
 		)
 		if shift_assignment_list:
 			for shift in shift_assignment_list:
@@ -77,17 +81,13 @@ class ShiftRequest(Document):
 		if self.approver not in approvers:
 			frappe.throw(_("Only Approvers can Approve this Request."))
 
-	def validate_dates(self):
-		if self.from_date and self.to_date and (getdate(self.to_date) < getdate(self.from_date)):
-			frappe.throw(_("To date cannot be before from date"))
-
 	def validate_overlapping_shift_requests(self):
 		overlapping_dates = self.get_overlapping_dates()
 		if len(overlapping_dates):
 			# if dates are overlapping, check if timings are overlapping, else allow
-			overlapping_timings = has_overlapping_timings(self.shift_type, overlapping_dates[0].shift_type)
-			if overlapping_timings:
-				self.throw_overlap_error(overlapping_dates[0])
+			for d in overlapping_dates:
+				if has_overlapping_timings(self.shift_type, d.shift_type):
+					self.throw_overlap_error(d)
 
 	def get_overlapping_dates(self):
 		if not self.name:
@@ -97,33 +97,16 @@ class ShiftRequest(Document):
 		query = (
 			frappe.qb.from_(shift)
 			.select(shift.name, shift.shift_type)
-			.where((shift.employee == self.employee) & (shift.docstatus < 2) & (shift.name != self.name))
+			.where(
+				(shift.employee == self.employee)
+				& (shift.docstatus < 2)
+				& (shift.name != self.name)
+				& ((shift.to_date >= self.from_date) | (shift.to_date.isnull()))
+			)
 		)
 
 		if self.to_date:
-			query = query.where(
-				Criterion.any(
-					[
-						Criterion.any(
-							[
-								shift.to_date.isnull(),
-								((self.from_date >= shift.from_date) & (self.from_date <= shift.to_date)),
-							]
-						),
-						Criterion.any(
-							[
-								((self.to_date >= shift.from_date) & (self.to_date <= shift.to_date)),
-								shift.from_date.between(self.from_date, self.to_date),
-							]
-						),
-					]
-				)
-			)
-		else:
-			query = query.where(
-				shift.to_date.isnull()
-				| ((self.from_date >= shift.from_date) & (self.from_date <= shift.to_date))
-			)
+			query = query.where(shift.from_date <= self.to_date)
 
 		return query.run(as_dict=True)
 

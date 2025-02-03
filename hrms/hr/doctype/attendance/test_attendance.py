@@ -2,10 +2,11 @@
 # See license.txt
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 from frappe.utils import (
 	add_days,
 	add_months,
+	get_first_day,
 	get_last_day,
 	get_year_ending,
 	get_year_start,
@@ -18,7 +19,6 @@ from erpnext.setup.doctype.employee.test_employee import make_employee
 from hrms.hr.doctype.attendance.attendance import (
 	DuplicateAttendanceError,
 	OverlappingShiftAttendanceError,
-	get_month_map,
 	get_unmarked_days,
 	mark_attendance,
 )
@@ -27,11 +27,11 @@ from hrms.tests.test_utils import get_first_sunday
 test_records = frappe.get_test_records("Attendance")
 
 
-class TestAttendance(FrappeTestCase):
+class TestAttendance(IntegrationTestCase):
 	def setUp(self):
 		from hrms.payroll.doctype.salary_slip.test_salary_slip import make_holiday_list
 
-		from_date = get_year_start(getdate())
+		from_date = get_year_start(add_months(getdate(), -1))
 		to_date = get_year_ending(getdate())
 		self.holiday_list = make_holiday_list(from_date=from_date, to_date=to_date)
 		frappe.db.delete("Attendance")
@@ -147,9 +147,7 @@ class TestAttendance(FrappeTestCase):
 		self.assertEqual(attendance, fetch_attendance)
 
 	def test_unmarked_days(self):
-		first_sunday = get_first_sunday(
-			self.holiday_list, for_date=get_last_day(add_months(getdate(), -1))
-		)
+		first_sunday = get_first_sunday(self.holiday_list, for_date=get_last_day(add_months(getdate(), -1)))
 		attendance_date = add_days(first_sunday, 1)
 
 		employee = make_employee(
@@ -158,9 +156,10 @@ class TestAttendance(FrappeTestCase):
 		frappe.db.set_value("Employee", employee, "holiday_list", self.holiday_list)
 
 		mark_attendance(employee, attendance_date, "Present")
-		month_name = get_month_name(attendance_date)
 
-		unmarked_days = get_unmarked_days(employee, month_name)
+		unmarked_days = get_unmarked_days(
+			employee, get_first_day(attendance_date), get_last_day(attendance_date)
+		)
 		unmarked_days = [getdate(date) for date in unmarked_days]
 
 		# attendance already marked for the day
@@ -171,9 +170,7 @@ class TestAttendance(FrappeTestCase):
 		self.assertIn(first_sunday, unmarked_days)
 
 	def test_unmarked_days_excluding_holidays(self):
-		first_sunday = get_first_sunday(
-			self.holiday_list, for_date=get_last_day(add_months(getdate(), -1))
-		)
+		first_sunday = get_first_sunday(self.holiday_list, for_date=get_last_day(add_months(getdate(), -1)))
 		attendance_date = add_days(first_sunday, 1)
 
 		employee = make_employee(
@@ -182,9 +179,10 @@ class TestAttendance(FrappeTestCase):
 		frappe.db.set_value("Employee", employee, "holiday_list", self.holiday_list)
 
 		mark_attendance(employee, attendance_date, "Present")
-		month_name = get_month_name(attendance_date)
 
-		unmarked_days = get_unmarked_days(employee, month_name, exclude_holidays=True)
+		unmarked_days = get_unmarked_days(
+			employee, get_first_day(attendance_date), get_last_day(attendance_date), exclude_holidays=True
+		)
 		unmarked_days = [getdate(date) for date in unmarked_days]
 
 		# attendance already marked for the day
@@ -195,9 +193,7 @@ class TestAttendance(FrappeTestCase):
 		self.assertNotIn(first_sunday, unmarked_days)
 
 	def test_unmarked_days_as_per_joining_and_relieving_dates(self):
-		first_sunday = get_first_sunday(
-			self.holiday_list, for_date=get_last_day(add_months(getdate(), -1))
-		)
+		first_sunday = get_first_sunday(self.holiday_list, for_date=get_last_day(add_months(getdate(), -1)))
 		date = add_days(first_sunday, 1)
 
 		doj = add_days(date, 1)
@@ -210,9 +206,10 @@ class TestAttendance(FrappeTestCase):
 
 		attendance_date = add_days(date, 2)
 		mark_attendance(employee, attendance_date, "Present")
-		month_name = get_month_name(attendance_date)
 
-		unmarked_days = get_unmarked_days(employee, month_name)
+		unmarked_days = get_unmarked_days(
+			employee, get_first_day(attendance_date), get_last_day(attendance_date)
+		)
 		unmarked_days = [getdate(date) for date in unmarked_days]
 
 		# attendance already marked for the day
@@ -224,10 +221,3 @@ class TestAttendance(FrappeTestCase):
 
 	def tearDown(self):
 		frappe.db.rollback()
-
-
-def get_month_name(date):
-	month_number = date.month
-	for month, number in get_month_map().items():
-		if number == month_number:
-			return month

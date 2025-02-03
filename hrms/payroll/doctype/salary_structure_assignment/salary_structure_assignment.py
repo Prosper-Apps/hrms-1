@@ -5,7 +5,9 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, getdate
+from frappe.utils import cint, flt, get_link_to_form, getdate
+
+from hrms.payroll.doctype.payroll_period.payroll_period import get_payroll_period
 
 
 class DuplicateAssignment(frappe.ValidationError):
@@ -15,12 +17,18 @@ class DuplicateAssignment(frappe.ValidationError):
 class SalaryStructureAssignment(Document):
 	def validate(self):
 		self.validate_dates()
+		self.validate_company()
 		self.validate_income_tax_slab()
 		self.set_payroll_payable_account()
+
 		if not self.get("payroll_cost_centers"):
 			self.set_payroll_cost_centers()
 
-		self.validate_cost_center_distribution()
+		self.validate_cost_centers()
+		self.warn_about_missing_opening_entries()
+
+	def on_update_after_submit(self):
+		self.validate_cost_centers()
 
 	def validate_dates(self):
 		joining_date, relieving_date = frappe.db.get_value(
@@ -32,7 +40,9 @@ class SalaryStructureAssignment(Document):
 				"Salary Structure Assignment",
 				{"employee": self.employee, "from_date": self.from_date, "docstatus": 1},
 			):
-				frappe.throw(_("Salary Structure Assignment for Employee already exists"), DuplicateAssignment)
+				frappe.throw(
+					_("Salary Structure Assignment for Employee already exists"), DuplicateAssignment
+				)
 
 			if joining_date and getdate(self.from_date) < joining_date:
 				frappe.throw(
@@ -49,13 +59,34 @@ class SalaryStructureAssignment(Document):
 					)
 				)
 
+	def validate_company(self):
+		salary_structure_company = frappe.db.get_value(
+			"Salary Structure", self.salary_structure, "company", cache=True
+		)
+		if self.company != salary_structure_company:
+			frappe.throw(
+				_("Salary Structure {0} does not belong to company {1}").format(
+					frappe.bold(self.salary_structure), frappe.bold(self.company)
+				)
+			)
+
 	def validate_income_tax_slab(self):
+		tax_component = get_tax_component(self.salary_structure)
+		if tax_component and not self.income_tax_slab:
+			frappe.throw(
+				_(
+					"Income Tax Slab is mandatory since the Salary Structure {0} has a tax component {1}"
+				).format(
+					get_link_to_form("Salary Structure", self.salary_structure), frappe.bold(tax_component)
+				),
+				exc=frappe.MandatoryError,
+				title=_("Missing Mandatory Field"),
+			)
+
 		if not self.income_tax_slab:
 			return
 
-		income_tax_slab_currency = frappe.db.get_value(
-			"Income Tax Slab", self.income_tax_slab, "currency"
-		)
+		income_tax_slab_currency = frappe.db.get_value("Income Tax Slab", self.income_tax_slab, "currency")
 		if self.currency != income_tax_slab_currency:
 			frappe.throw(
 				_("Currency of selected Income Tax Slab should be {0} instead of {1}").format(
@@ -96,11 +127,54 @@ class SalaryStructureAssignment(Document):
 
 		return payroll_cost_center
 
-	def validate_cost_center_distribution(self):
-		if self.get("payroll_cost_centers"):
-			total_percentage = sum([flt(d.percentage) for d in self.get("payroll_cost_centers", [])])
-			if total_percentage != 100:
-				frappe.throw(_("Total percentage against cost centers should be 100"))
+	def validate_cost_centers(self):
+		if not self.get("payroll_cost_centers"):
+			return
+
+		total_percentage = 0
+		for entry in self.payroll_cost_centers:
+			company = frappe.db.get_value("Cost Center", entry.cost_center, "company")
+			if company != self.company:
+				frappe.throw(
+					_("Row {0}: Cost Center {1} does not belong to Company {2}").format(
+						entry.idx, frappe.bold(entry.cost_center), frappe.bold(self.company)
+					),
+					title=_("Invalid Cost Center"),
+				)
+
+			total_percentage += flt(entry.percentage)
+
+		if total_percentage != 100:
+			frappe.throw(_("Total percentage against cost centers should be 100"))
+
+	def warn_about_missing_opening_entries(self):
+		if (
+			self.are_opening_entries_required()
+			and not self.taxable_earnings_till_date
+			and not self.tax_deducted_till_date
+		):
+			msg = _(
+				"Please specify {0} and {1} (if any), for the correct tax calculation in future salary slips."
+			).format(
+				frappe.bold(_("Taxable Earnings Till Date")),
+				frappe.bold(_("Tax Deducted Till Date")),
+			)
+			frappe.msgprint(
+				msg,
+				indicator="orange",
+				title=_("Missing Opening Entries"),
+			)
+
+	@frappe.whitelist()
+	def are_opening_entries_required(self) -> bool:
+		if not get_tax_component(self.salary_structure):
+			return False
+
+		payroll_period = get_payroll_period(self.from_date, self.from_date, self.company)
+		if payroll_period and getdate(self.from_date) <= getdate(payroll_period.start_date):
+			return False
+
+		return True
 
 
 def get_assigned_salary_structure(employee, on_date):
@@ -122,9 +196,7 @@ def get_assigned_salary_structure(employee, on_date):
 
 @frappe.whitelist()
 def get_employee_currency(employee):
-	employee_currency = frappe.db.get_value(
-		"Salary Structure Assignment", {"employee": employee}, "currency"
-	)
+	employee_currency = frappe.db.get_value("Salary Structure Assignment", {"employee": employee}, "currency")
 	if not employee_currency:
 		frappe.throw(
 			_("There is no Salary Structure assigned to {0}. First assign a Salary Stucture.").format(
@@ -132,3 +204,11 @@ def get_employee_currency(employee):
 			)
 		)
 	return employee_currency
+
+
+def get_tax_component(salary_structure: str) -> str | None:
+	salary_structure = frappe.get_cached_doc("Salary Structure", salary_structure)
+	for d in salary_structure.deductions:
+		if cint(d.variable_based_on_taxable_salary) and not d.formula and not flt(d.amount):
+			return d.salary_component
+	return None

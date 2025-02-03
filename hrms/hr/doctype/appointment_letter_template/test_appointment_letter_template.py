@@ -2,8 +2,8 @@
 # See license.txt
 
 # import frappe
-import unittest
+from frappe.tests import IntegrationTestCase
 
 
-class TestAppointmentLetterTemplate(unittest.TestCase):
+class TestAppointmentLetterTemplate(IntegrationTestCase):
 	pass

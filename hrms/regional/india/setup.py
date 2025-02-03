@@ -5,11 +5,18 @@
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from hrms.setup import delete_custom_fields
+
 
 def setup():
 	make_custom_fields()
 	add_custom_roles_for_reports()
 	create_gratuity_rule_for_india()
+
+
+def uninstall():
+	custom_fields = get_custom_fields()
+	delete_custom_fields(custom_fields)
 
 
 def make_custom_fields(update=True):
@@ -77,7 +84,7 @@ def get_custom_fields():
 				"fieldname": "hra_section",
 				"label": "HRA Settings",
 				"fieldtype": "Section Break",
-				"insert_after": "asset_received_but_not_billed",
+				"insert_after": "default_payroll_payable_account",
 				"collapsible": 1,
 			},
 			{
@@ -233,13 +240,13 @@ def add_custom_roles_for_reports():
 		"Income Tax Deductions",
 	):
 		if not frappe.db.get_value("Custom Role", dict(report=report_name)):
-			frappe.get_doc(
+			doc = frappe.new_doc("Custom Role")
+			doc.update(
 				dict(
-					doctype="Custom Role",
 					report=report_name,
 					roles=[dict(role="HR User"), dict(role="HR Manager"), dict(role="Employee")],
 				)
-			).insert()
+			).insert(ignore_permissions=True)
 
 
 def create_gratuity_rule_for_india():
@@ -265,5 +272,4 @@ def create_gratuity_rule_for_india():
 			],
 		}
 	)
-	rule.flags.ignore_mandatory = True
-	rule.save()
+	rule.insert(ignore_permissions=True, ignore_mandatory=True)

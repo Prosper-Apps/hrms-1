@@ -2,8 +2,8 @@
 # See license.txt
 
 # import frappe
-import unittest
+from frappe.tests import IntegrationTestCase
 
 
-class TestGrievanceType(unittest.TestCase):
+class TestGrievanceType(IntegrationTestCase):
 	pass

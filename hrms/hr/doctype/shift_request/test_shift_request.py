@@ -1,10 +1,8 @@
 # Copyright (c) 2018, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
-import unittest
-
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase, change_settings
 from frappe.utils import add_days, nowdate
 
 from erpnext.setup.doctype.employee.test_employee import make_employee
@@ -15,7 +13,7 @@ from hrms.hr.doctype.shift_type.test_shift_type import setup_shift_type
 test_dependencies = ["Shift Type"]
 
 
-class TestShiftRequest(FrappeTestCase):
+class TestShiftRequest(IntegrationTestCase):
 	def setUp(self):
 		for doctype in ["Shift Request", "Shift Assignment", "Shift Type"]:
 			frappe.db.delete(doctype)
@@ -48,6 +46,7 @@ class TestShiftRequest(FrappeTestCase):
 			"Shift Assignment", filters={"shift_request": shift_request.name}, fieldname="docstatus"
 		)
 		self.assertEqual(shift_assignment_docstatus, 2)
+		self.assertEqual(shift_request.docstatus, 2)
 
 	def test_shift_request_approver_perms(self):
 		setup_shift_type(shift_type="Day Shift")
@@ -193,6 +192,7 @@ class TestShiftRequest(FrappeTestCase):
 
 		self.assertRaises(OverlappingShiftRequestError, shift2.insert)
 
+	@change_settings("HR Settings", {"allow_multiple_shift_assignments": 1})
 	def test_allow_non_overlapping_shift_requests_for_same_day(self):
 		user = "test_shift_request@example.com"
 		employee = make_employee(user, company="_Test Company", shift_request_approver=user)
@@ -237,18 +237,30 @@ def set_shift_approver(department):
 	department_doc.reload()
 
 
-def make_shift_request(approver, do_not_submit=0):
+def make_shift_request(
+	approver=None,
+	employee="_T-Employee-00001",
+	employee_name="_Test Employee",
+	status="Approved",
+	from_date=None,
+	to_date=None,
+	do_not_submit=0,
+):
+	from_date = from_date or nowdate()
+	to_date = to_date or add_days(nowdate(), 10)
+	approver = approver or frappe.db.get_value("Employee", employee, "shift_request_approver")
+
 	shift_request = frappe.get_doc(
 		{
 			"doctype": "Shift Request",
 			"shift_type": "Day Shift",
 			"company": "_Test Company",
-			"employee": "_T-Employee-00001",
-			"employee_name": "_Test Employee",
-			"from_date": nowdate(),
-			"to_date": add_days(nowdate(), 10),
+			"employee": employee,
+			"employee_name": employee_name,
+			"from_date": from_date,
+			"to_date": to_date,
 			"approver": approver,
-			"status": "Approved",
+			"status": status,
 		}
 	).insert()
 
